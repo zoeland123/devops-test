@@ -3,7 +3,7 @@ pipeline {
   environment {
     REGISTRY = 'docker.io'
     APP = 'hello-devops'
-    DOCKERHUB_USERNAME = 'your-dockerhub-username'
+    DOCKERHUB_USERNAME = 'zambo123'
   }
 
   stages {
