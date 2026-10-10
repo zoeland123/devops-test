@@ -1,0 +1,20 @@
+=== SEBELUM SWAP (Sat Oct 10 04:24:57 WIB 2026) ===
+CONTAINER ID   IMAGE                COMMAND   CREATED          STATUS          PORTS                                         NAMES
+cc57dad00cbc   hello-devops:1.0.0   "/app"    13 seconds ago   Up 10 seconds   0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   app
+Hello, DevOps! version=1.0.0
+
+=== BUILD BINARY BARU DI HOST ===
+-rwxrwxrwx 1 zulfakar zulfakar 4.6M Oct 10 04:09 app-new
+
+=== SWAP + RESTART ===
+app
+
+=== SESUDAH SWAP (Sat Oct 10 04:25:18 WIB 2026) ===
+CONTAINER ID   IMAGE                COMMAND   CREATED          STATUS         PORTS                                         NAMES
+cc57dad00cbc   hello-devops:1.0.0   "/app"    33 seconds ago   Up 4 seconds   0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   app
+Hello, DevOps! version=1.0.1
+
+=== BUKTI TANPA REBUILD ===
+IMAGE                ID             DISK USAGE   CONTENT SIZE   EXTRA
+hello-devops:1.0.0   8c62f40c9007       6.86MB         2.09MB   U    
+hello-devops:1.0.1   4f6efa69ee7f       6.86MB         2.09MB        

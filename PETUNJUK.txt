@@ -1,0 +1,9 @@
+URUTAN KERJA
+1. Ekstrak zip, buka folder di Kiro.
+2. Part I & II: pakai file di root (main.go asli).
+   go run .            -> curl localhost:8080
+   docker build --build-arg VERSION=1.0.0 -t hello-devops:1.0.0 .
+3. Part III: salin part3-jenkins/main.go dan main_test.go ke root (timpa main.go),
+   salin part3-jenkins/Jenkinsfile ke root. Ganti GANTI-USERNAME-DOCKERHUB di Jenkinsfile.
+4. go.mod: sesuaikan baris "go 1.22" dan tag golang:1.22-alpine di Dockerfile dengan `go version` kamu.
+5. Lengkapi README.md dengan output asli, push ke GitHub, undang admin@simplejourney.co.id.
