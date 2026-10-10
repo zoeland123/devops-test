@@ -1,4 +1,0 @@
-FROM jenkins/jenkins:lts
-USER root
-RUN apt-get update && apt-get install -y docker.io curl golang-go && rm -rf /var/lib/apt/lists/*
-# Untuk lingkungan tes saja; jika docker.sock permission denied, tetap jalan sebagai root
