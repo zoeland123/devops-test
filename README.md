@@ -1,88 +1,154 @@
-# DevOps Test - Hello DevOps (Go)
+# Hello DevOps
 
-## Versi Go
-`go version go1.22.12 linux/amd64` (di dalam container builder `golang:1.22-alpine` / Docker)
+Aplikasi HTTP sederhana dengan Go untuk latihan build image Docker, hotfix binary,
+dan pipeline CI/CD Jenkins.
 
-## Struktur
-- `main.go`, `go.mod`, `Dockerfile`, `.dockerignore` : Part I & II
-- `part3-jenkins/` : main.go (handler terpisah), main_test.go, Jenkinsfile, Dockerfile.jenkins
-- `scripts/deploy.sh` : swap binary + health check + rollback
-- `screenshots/` : bukti
+## Persyaratan
 
-## Part I - Build
-Perintah build:
-```bash
+- Go 1.22 atau lebih baru untuk menjalankan dan menguji aplikasi secara lokal.
+- Docker untuk membangun dan menjalankan image.
+- Jenkins dengan Git, Pipeline, dan Credentials Binding plugins untuk pipeline.
+- Agent Jenkins memiliki Go, Docker CLI, akses ke Docker daemon, dan `curl`.
+
+## Part I: Build dan jalankan
+
+Jalankan unit test dan static analysis:
+
+```sh
+go vet ./...
+go test ./...
+```
+
+Untuk menjalankan aplikasi langsung dengan Go:
+
+```sh
+go run .
+```
+
+Aplikasi mendengarkan port `8080` secara default. Verifikasi dari terminal lain:
+
+```sh
+curl http://localhost:8080/
+```
+
+Respons default: `Hello, DevOps! version=dev`.
+
+Build image versi `1.0.0` dan jalankan container:
+
+```sh
 docker build --build-arg VERSION=1.0.0 -t hello-devops:1.0.0 .
+docker run -d --name app -p 8081:8080 --restart unless-stopped hello-devops:1.0.0
+curl http://localhost:8081/
 ```
 
-Ukuran image: **6.86 MB** (Content size: 2.09 MB)
-Output `docker images hello-devops`:
-```
-REPOSITORY     TAG       IMAGE ID       CREATED         SIZE
-hello-devops   1.0.0     8c62f40c9007   5 minutes ago   6.86MB
-```
+Respons yang diharapkan: `Hello, DevOps! version=1.0.0`.
+Jika nama `app` sudah digunakan container lain, pilih nama container dan port
+host yang belum digunakan, lalu sesuaikan perintah deploy.
 
-Alasan base image `scratch`: Binary Go dikompilasi secara statis (`CGO_ENABLED=0`) sehingga tidak membutuhkan OS atau shared libraries tambahan dari builder OS. Ukuran image menjadi sangat kecil (hanya seukuran binary Go) dan *attack surface* menjadi sangat minimal karena tidak ada shell atau utility lain. Trade-off: Tanpa shell untuk debugging internal dan tanpa CA certificates default.
+Dockerfile menggunakan multi-stage build: Go mengompilasi binary statis dengan
+`CGO_ENABLED=0`, lalu binary saja disalin ke image final `scratch`. Ini menjaga
+image kecil dan mengurangi komponen runtime, dengan trade-off tidak ada shell
+untuk debugging di dalam container. Hasil pengukuran yang tercatat untuk image
+`hello-devops:1.0.0` adalah **6.86 MB** ukuran image dan **2.09 MB** content size;
+ukuran dapat berbeda pada build lain.
 
-## Part II - Deploy
-Perintah deploy & swap binary:
-```bash
+## Part II: Hotfix dan rollback
+
+Container dijalankan dengan restart policy otomatis. Perintah berikut
+memetakan host port `8080` ke port aplikasi `8080` di container:
+
+```sh
 docker run -d --name app -p 8080:8080 --restart unless-stopped hello-devops:1.0.0
-
-# Verifikasi sebelum swap binary:
-curl localhost:8080
-# Output sebelum: Hello, DevOps! version=1.0.0
-
-# Kompilasi binary baru (v1.0.1) untuk target Linux:
-docker run --rm -v "$(pwd):/src" -w /src golang:1.22-alpine go build -trimpath -ldflags="-s -w -X main.version=1.0.1" -o app-new .
-
-# Swap binary & restart container:
-docker cp app-new app:/app
-docker restart app
-
-# Verifikasi setelah swap binary:
-curl localhost:8080
-# Output sesudah: Hello, DevOps! version=1.0.1
+curl http://localhost:8080/
 ```
 
-**Penjelasan Pendekatan Hotfix (3-5 kalimat):**
-Kami memilih pendekatan menyalin binary baru menggunakan `docker cp` ke dalam container yang sedang berjalan kemudian melakukan `docker restart app`. Metode ini sangat cocok untuk skenario production hotfix darurat karena proses restart container `scratch` hanya membutuhkan *downtime* di bawah 2 detik tanpa perlu melakukan rebuild image Docker dari awal. Selain itu, seluruh atribut container (seperti port mapping, volume, dan restart policy) tetap dipertahankan tanpa perubahan. Trade-off dari pendekatan ini adalah terjadinya *image drift*, di mana binary yang berjalan di dalam container berbeda dengan image dasar yang tersimpan di image registry.
+Output sebelum swap:
 
-## Part III - Jenkins
-Jenkinsfile: `part3-jenkins/Jenkinsfile`. Credential: `dockerhub-creds` (Access Token).
-Screenshot run sukses: *(Part III CI/CD Jenkins belum dikonfigurasi)*
+```text
+Hello, DevOps! version=1.0.0
+```
 
-Pipeline Jenkins dibuat untuk mengotomatiskan proses build, test, dan deploy aplikasi Go. Proses yang dijalankan dalam pipeline meliputi:
-1. Checkout source code dari repositori
-2. Test aplikasi dengan `go vet ./...` dan `go test -v ./...`
-3. Build Docker image baru dengan tag berdasarkan commit hash Git
-4. Push image ke Docker Hub menggunakan Jenkins credentials
-5. Deploy binary baru ke container target dengan mekanisme swap binary tanpa rebuild dari Part II
+Untuk hotfix, binary Linux baru dibangun terpisah memakai Go builder container
+dan workspace yang di-mount. Ini tidak membangun ulang image aplikasi dan tidak
+menghapus container `app`. Jalankan dari root repository:
 
-File utama:
-- `Jenkinsfile`
-- `scripts/deploy.sh`
-- `main_test.go`
+```sh
+docker run --rm -v "$(pwd):/src" -w /src golang:1.22-alpine \
+	go build -trimpath -ldflags="-s -w -X main.version=1.0.1" -o app-new .
+docker cp ./app-new app:/app
+docker restart app
+curl http://localhost:8080/
+```
 
-### Alur pipeline
-- Checkout: mengambil source code dari Git
-- Test: menjalankan validasi unit test; jika test gagal, pipeline dihentikan dan tidak lanjut ke build/deploy
-- Build Image: menjalankan `docker build --build-arg VERSION=${VERSION} -t ${IMAGE} .`
-- Push: login ke Docker Hub menggunakan credential Jenkins `dockerhub-creds`
-- Deploy: menjalankan `./scripts/deploy.sh ${IMAGE} app`
+Output sesudah swap:
 
-### Rollback otomatis
-Script deploy pada `scripts/deploy.sh` melakukan backup binary lama sebelum mengganti binary baru. Setelah restart, script melakukan health check HTTP. Jika health check gagal, script akan memulihkan binary lama dari backup dan restart container kembali. Dengan mekanisme ini, deploy yang gagal di tengah proses tetap dapat dikembalikan ke versi sebelumnya.
+```text
+Hello, DevOps! version=1.0.1
+```
 
-### Catatan penting
-- Jenkins credential tidak disimpan secara hardcoded dalam pipeline
-- Username Docker Hub dan credential harus disesuaikan dengan akun yang valid sebelum pipeline dijalankan
-- Bukti sukses pipeline bisa diambil dari screenshot Jenkins atau log build yang menampilkan semua stage berwarna hijau
+Pendekatan ini cocok untuk hotfix darurat karena hanya binary yang disalin dan
+proses container yang direstart; port mapping, volume, dan konfigurasi container
+tetap ada, tanpa menjalankan ulang `docker build`. Log pengujian yang tersimpan
+menunjukkan versi berubah dari `1.0.0` ke `1.0.1` pada host port `8081` dan
+container tetap hidup setelah restart. Trade-off-nya adalah *image drift*:
+binary di container berbeda dari image asal. Restart menyebabkan jeda singkat;
+catatan pengujian tidak mengukur downtime secara presisi.
 
-### Deliverables
-- `Jenkinsfile`
-- Screenshot/log pipeline successful run
-- Penjelasan rollback otomatis bila deploy gagal
+Pipeline menggunakan `scripts/deploy.sh` untuk proses yang sama. Script itu
+membuat container sementara dari image baru, menyalin `/app`, menyimpan backup
+binary lama, menyalin binary baru ke container target, lalu restart. Script
+memeriksa `HEALTH_URL` (default `http://host.docker.internal:8080/`) sampai lima
+kali. Jika health check gagal, script menyalin kembali backup dan me-restart
+container. Rollback ini hanya berlaku setelah backup berhasil dibuat; kegagalan
+sebelumnya, misalnya container target tidak ditemukan, tidak dapat dipulihkan
+dengan backup tersebut.
 
-Rollback: `scripts/deploy.sh` melakukan backup binary lama (`docker cp app:/app ./app-backup`), menguji health check HTTP, dan memulihkan binary lama jika health check gagal. Keterbatasan: Rollback gagal jika kesalahan terjadi sebelum backup selesai dilakukan.
+Log hasil swap yang tercatat ada di [`screenshots/part2-swap.log`](screenshots/part2-swap.log)
+dan screenshot di `screenshots/Screenshot 2026-10-10 043138.png`. Bukti tersebut
+menggunakan host port `8081` (bukan `8080`) dan menunjukkan respons berubah dari
+versi `1.0.0` menjadi `1.0.1`, sementara container masih menggunakan image
+`hello-devops:1.0.0` dengan ukuran 6.86 MB.
+
+## Part III: Jenkins CI/CD
+
+Pipeline didefinisikan di [`Jenkinsfile`](Jenkinsfile) dan deploy script di
+[`scripts/deploy.sh`](scripts/deploy.sh). Untuk menghubungkan job ke GitHub,
+buat job **Pipeline**, lalu pilih **Pipeline script from SCM** → **Git**; isi
+URL repository, branch (misalnya `*/main`), dan Script Path `Jenkinsfile`.
+Repository publik tidak memerlukan credential SCM; untuk repository privat,
+simpan token GitHub sebagai credential Jenkins.
+
+Urutan stage pipeline:
+
+1. **Checkout**: checkout repository dan ambil short commit hash sebagai tag versi.
+2. **Test**: jalankan `go vet ./...` dan `go test -v ./...`. Kegagalan test
+	 menghentikan stage berikutnya.
+3. **Build Image**: build image `docker.io/<DockerHub-username>/hello-devops:<commit>`.
+4. **Push**: login dan push image menggunakan credential Jenkins ber-ID
+	 `dockerhub-creds`.
+5. **Deploy**: jalankan `scripts/deploy.sh` untuk swap binary pada container target
+	 bernama `app` dan health check.
+
+Tambahkan Docker Hub credential melalui **Manage Jenkins → Credentials** dengan
+tipe **Username with password**. Isi username Docker Hub, password dengan
+Docker Hub access token, dan ID persis `dockerhub-creds`. Jangan simpan token di
+Jenkinsfile. Target `app` harus sudah berjalan, dan health endpoint harus dapat
+dijangkau dari agent Jenkins di `http://host.docker.internal:8080/` atau melalui
+nilai `HEALTH_URL` yang sesuai.
+
+Untuk Jenkins lokal, build dapat dimulai manual melalui **Build Now**. GitHub
+webhook tidak dapat mengakses Jenkins di `localhost` tanpa endpoint yang bisa
+dijangkau dari internet.
+
+## Deliverables dan bukti
+
+- Source Go, unit test, Dockerfile, Jenkinsfile, dan deploy script berada di root
+	repository serta `scripts/`.
+- Uraian build, runtime, pendekatan hotfix, ukuran image, alur pipeline, dan
+	mekanisme rollback dijelaskan di README ini.
+- Bukti Part II tersedia sebagai log dan screenshot di `screenshots/`.
+- Tambahkan screenshot atau log build Jenkins dengan seluruh stage sukses setelah
+	pipeline terbaru berhasil dijalankan; bukti sukses Jenkins belum ada di folder
+	`screenshots/` saat README ini diperbarui.
+- Push repository ke GitHub dan undang `admin@simplejourney.co.id` sebagai reviewer.
 
