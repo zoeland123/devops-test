@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" -o /out/app .
 
 # ---- Stage 2: runtime ----
-FROM scratch
+FROM golang:1.22-alpine
 COPY --from=build /out/app /app
 EXPOSE 8080
 ENTRYPOINT ["/app"]
