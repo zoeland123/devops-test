@@ -148,7 +148,7 @@ dijangkau dari internet.
 	mekanisme rollback dijelaskan di README ini.
 - Bukti Part II tersedia sebagai log dan screenshot di `screenshots/`.
 - Tambahkan screenshot atau log build Jenkins dengan seluruh stage sukses setelah
-	pipeline terbaru berhasil dijalankan; bukti sukses Jenkins belum ada di folder
+	pipeline terbaru berhasil dijalankan; bukti sukses Jenkins sudah ada di folder
 	`screenshots/` saat README ini diperbarui.
 - Push repository ke GitHub dan undang `admin@simplejourney.co.id` sebagai reviewer.
 
